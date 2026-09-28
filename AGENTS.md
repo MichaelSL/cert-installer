@@ -28,6 +28,7 @@ dotnet build
 dotnet test                                        # unit tests only
 dotnet test --filter Category=Integration          # touches the REAL trust store
 ./scripts/publish.sh                               # self-contained binaries -> dist/<rid>/
+dotnet tool restore && dotnet stryker             # mutation testing (unit tests only) -> StrykerOutput/
 ```
 
 ## Rules
