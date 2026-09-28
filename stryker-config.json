@@ -1,0 +1,7 @@
+{
+  "stryker-config": {
+    "solution": "CertInstaller.slnx",
+    "test-case-filter": "Category!=Integration",
+    "reporters": ["progress", "cleartext", "html"]
+  }
+}
