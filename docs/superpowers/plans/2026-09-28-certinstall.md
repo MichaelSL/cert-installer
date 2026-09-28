@@ -95,7 +95,7 @@ README.md
 - Produces:
   - `namespace CertInstaller.Core`
   - `public sealed class CertificateLoadException(string message) : Exception`
-  - `public sealed class CertificateFile` with `static CertificateFile Load(string path)`, properties `string Path` (absolute), `X509Certificate2 Certificate`, `string Sha256` (uppercase hex), `string Sha1` (uppercase hex), `string Nickname`, `string Subject`, `string Issuer`, method `string ToPem()`.
+  - `public sealed class CertificateFile : IDisposable` with `static CertificateFile Load(string path)` (every failure, including unreadable files, is a `CertificateLoadException`), properties `string Path` (absolute), `internal X509Certificate2 Certificate` (for trust-store backends; tests see it via `InternalsVisibleTo`), `string Sha256` (uppercase hex), `string Sha1` (uppercase hex), `string Nickname`, `string Subject`, `string Issuer`, method `string ToPem()`.
   - Test support (namespace `CertInstaller.Tests`): `TempDirectory : IDisposable` with `string Path`, `string Write(string name, string content)`, `string Write(string name, byte[] content)`; static `TestCertificates.SelfSignedLeaf(string[]? dnsNames = null, DateTimeOffset? notBefore = null, DateTimeOffset? notAfter = null)` returning `X509Certificate2` with private key, and extension `CertificateFile ToFile(this X509Certificate2 cert, TempDirectory dir, string name = "cert.pem")`.
 
 - [ ] **Step 1: Scaffold the solution**
