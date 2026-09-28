@@ -51,7 +51,7 @@ certinstall status    <cert-file> [--system]
 
 ### Accepted certificates
 
-- Self-signed (issuer == subject, signature verifies with its own key): accepted.
+- Self-signed (subject name == issuer name): accepted.
 - CA certificate (basicConstraints CA=true): accepted.
 - Leaf issued by another CA: refused with exit 2 —
   `this certificate is issued by <issuer>; install the issuing CA instead` —
@@ -108,10 +108,10 @@ name, it is `certinstall-<first 16 hex chars of SHA-256>` (the "nickname").
 
 ## Architecture
 
-.NET 10, C#. Solution `CertInstaller.sln`:
+.NET 10, C#. Solution `CertInstaller.slnx`:
 
 ```
-src/CertInstaller.Cli/        entry point, System.CommandLine parsing, exit codes
+src/CertInstaller.Cli/        entry point, hand-rolled arg parsing (no deps, trim-safe), exit codes
 src/CertInstaller.Core/
   CertificateFile.cs          load PEM/DER, fingerprints, validity + SAN checks
   ITrustStore.cs              Install / Uninstall / IsTrusted
@@ -164,12 +164,14 @@ arguments are passed as an argument list, never a concatenated shell string.
 | User | `~/Library/Keychains/login.keychain-db` | user (GUI password prompt) |
 | System | `/Library/Keychains/System.keychain` | admin (`-d`), requires sudo |
 
-- Install: `security add-trusted-cert [-d] -r trustRoot -p ssl -k <keychain> <file>`.
+- Install: `security add-trusted-cert [-d] -r <result> -k <keychain> <file>`,
+  where `<result>` is `trustRoot` for self-signed certs and `trustAsRoot` for a
+  `--force`d CA-issued leaf.
 - Uninstall: `security remove-trusted-cert [-d] <file>`, then
   `security delete-certificate -Z <SHA-1> <keychain>`.
-- IsTrusted: `security verify-cert -c <file> -p ssl` exit code 0. (To be
-  confirmed on a real Mac during implementation; fallback is checking
-  `security dump-trust-settings [-d]` for the SHA-1.)
+- IsTrusted: `security find-certificate -a -Z <keychain>` lists the SHA-1
+  (present in this scope's keychain) AND `security verify-cert -c <file>` exits 0.
+  (To be confirmed on a real Mac during manual testing.)
 - System scope without root → exit 3 "re-run with sudo".
 
 ### Linux user scope — `LinuxNssTrustStore` (Chrome/Chromium)
@@ -222,6 +224,8 @@ NativeAOT is not used (no cross-OS compilation).
 Distribution: GitHub Releases. A workflow triggered by a `v*` tag publishes
 all RIDs, packages each as `certinstall-<version>-<rid>.zip` (`.tar.gz` for
 macOS/Linux to keep the executable bit) and attaches a `SHA256SUMS` file.
+macOS archives are built on a macOS runner: the SDK only ad-hoc signs the
+apphost when publishing on macOS, and unsigned arm64 binaries are killed.
 
 Binaries are unsigned in v1. The README documents the workarounds: Windows
 SmartScreen "More info → Run anyway"; macOS `xattr -d com.apple.quarantine certinstall`.
@@ -232,10 +236,7 @@ SmartScreen "More info → Run anyway"; macOS `xattr -d com.apple.quarantine cer
   certs, garbage, SAN/expiry detection, CA detection), nickname derivation, and
   each shell-out backend's exact command lines via a fake `IProcessRunner`.
   Unit tests never touch a real trust store.
-- Integration tests (`[Trait("Category","Integration")]`, excluded by default,
-  run with `dotnet test --filter Category=Integration`): generate a throwaway
-  self-signed cert, install → status → uninstall → status against the real store.
-- Integration tests are run manually on real machines (Windows PC, Mac,
+- Real-store testing is manual, on real machines on real machines (Windows PC, Mac,
   Linux desktop) before each release, following a checklist in
   `docs/manual-test-checklist.md`: install → Chrome loads a `wss://` test page
   without warning → status → uninstall → warning is back. Both scopes.
