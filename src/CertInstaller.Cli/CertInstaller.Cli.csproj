@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\CertInstaller.Core\CertInstaller.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>certinstall</AssemblyName>
+    <RootNamespace>CertInstaller.Cli</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+</Project>
