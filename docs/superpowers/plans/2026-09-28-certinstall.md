@@ -75,7 +75,6 @@ tests/CertInstaller.Tests/
   CliAppTests.cs
 scripts/publish.sh
 .github/workflows/ci.yml
-.github/workflows/release.yml
 docs/manual-test-checklist.md
 README.md
 ```
@@ -2515,7 +2514,7 @@ git commit -m "feat: add certinstall CLI with install, uninstall and status"
 ### Task 8: Publishing, CI, release workflow and docs
 
 **Files:**
-- Create: `scripts/publish.sh`, `.github/workflows/ci.yml`, `.github/workflows/release.yml`
+- Done early: `scripts/publish.sh`, `.github/workflows/ci.yml` (tests, publish and release in one workflow)
 - Create: `README.md`, `docs/manual-test-checklist.md`
 - Modify: `AGENTS.md` (Commands section and first rule)
 
@@ -2523,135 +2522,10 @@ git commit -m "feat: add certinstall CLI with install, uninstall and status"
 - Consumes: the `certinstall` executable from Task 7.
 - Produces: `scripts/publish.sh <version> [rid...]` writing `dist/certinstall-<version>-<rid>.zip` (Windows) or `.tar.gz` (others).
 
-- [ ] **Step 1: Write the publish script**
-
-`scripts/publish.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Usage: scripts/publish.sh <version> [rid...]
-# Builds self-contained single-file binaries into dist/ and packages each RID.
-set -euo pipefail
-cd "$(dirname "$0")/.."
-
-version="${1:?usage: scripts/publish.sh <version> [rid...]}"
-shift
-rids=("$@")
-if [[ ${#rids[@]} -eq 0 ]]; then
-  rids=(win-x64 osx-arm64 osx-x64 linux-x64 linux-arm64)
-fi
-
-mkdir -p dist
-for rid in "${rids[@]}"; do
-  out="dist/$rid"
-  rm -rf "$out"
-  dotnet publish src/CertInstaller.Cli -c Release -r "$rid" --self-contained \
-    -p:PublishSingleFile=true -p:PublishTrimmed=true -p:DebugType=none -o "$out"
-  name="certinstall-$version-$rid"
-  if [[ $rid == win-* ]]; then
-    (cd "$out" && zip -q "../$name.zip" certinstall.exe)
-  else
-    tar -czf "dist/$name.tar.gz" -C "$out" certinstall
-  fi
-  echo "packaged dist/$name"
-done
-```
-
-Run:
-
-```bash
-chmod +x scripts/publish.sh
-./scripts/publish.sh dev linux-x64 win-x64
-ls dist
-./dist/linux-x64/certinstall --help; echo "exit=$?"
-```
-
-Expected: publish finishes with **no trim warnings** (they would fail the build because warnings are errors); `dist` contains `certinstall-dev-linux-x64.tar.gz` and `certinstall-dev-win-x64.zip`; `--help` prints usage and `exit=0`. Add `dist/` to `.gitignore`:
-
-```bash
-printf '\n# publish output\ndist/\n' >> .gitignore
-```
-
-- [ ] **Step 2: CI workflow**
-
-`.github/workflows/ci.yml`:
-
-```yaml
-name: ci
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-      - run: dotnet test
-```
-
-- [ ] **Step 3: Release workflow**
-
-macOS binaries must be built on a macOS runner: the SDK only ad-hoc signs the apphost when publishing on macOS, and unsigned arm64 binaries are killed at launch.
-
-`.github/workflows/release.yml`:
-
-```yaml
-name: release
-
-on:
-  push:
-    tags: ['v*']
-
-permissions:
-  contents: write
-
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            rids: win-x64 linux-x64 linux-arm64
-          - os: macos-latest
-            rids: osx-arm64 osx-x64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-      - run: dotnet test
-      - run: ./scripts/publish.sh "${{ github.ref_name }}" ${{ matrix.rids }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dist-${{ matrix.os }}
-          path: |
-            dist/*.zip
-            dist/*.tar.gz
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - run: cd dist && sha256sum * > SHA256SUMS
-      - run: gh release create "${{ github.ref_name }}" dist/* --repo "${{ github.repository }}" --generate-notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-```
+- [x] **Steps 1–3: Publish script, CI and release workflow** — done ahead of the
+  CLI in `scripts/publish.sh` and `.github/workflows/ci.yml`. Versions are
+  date based (`YYYY.MM.<run number>`); every push to `main` releases
+  `v<version>`. See the spec's Packaging section.
 
 - [ ] **Step 4: Manual test checklist**
 

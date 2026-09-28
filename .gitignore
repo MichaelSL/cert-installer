@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Stryker.NET mutation testing output
 StrykerOutput/
+
+# publish output
+dist/

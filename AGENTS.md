@@ -27,7 +27,7 @@ before making non-trivial changes and keep it in sync with behavior changes.
 dotnet build
 dotnet test                                        # unit tests only
 dotnet test --filter Category=Integration          # touches the REAL trust store
-./scripts/publish.sh                               # self-contained binaries -> dist/<rid>/
+./scripts/publish.sh <version> [rid...]            # self-contained binaries -> dist/certinstall-<version>-<rid>.*
 dotnet tool restore && dotnet stryker             # mutation testing (unit tests only) -> StrykerOutput/
 ```
 

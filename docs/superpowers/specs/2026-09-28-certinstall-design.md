@@ -221,9 +221,15 @@ RIDs: `win-x64`, `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`.
 Assembly name `certinstall`. A `scripts/publish.sh` loops over the RIDs.
 NativeAOT is not used (no cross-OS compilation).
 
-Distribution: GitHub Releases. A workflow triggered by a `v*` tag publishes
-all RIDs, packages each as `certinstall-<version>-<rid>.zip` (`.tar.gz` for
-macOS/Linux to keep the executable bit) and attaches a `SHA256SUMS` file.
+Versioning is date based: `YYYY.MM.BUILD`, where `YYYY.MM` is the UTC build
+date and `BUILD` is the CI workflow run number (monotonic, not reset monthly).
+It is passed to `dotnet publish` as `-p:Version`, so the assembly version is
+`YYYY.M.BUILD.0` and the informational version keeps the zero-padded form.
+
+Distribution: GitHub Releases. The `ci` workflow runs unit tests on every PR and
+push; every push to `main` then publishes all RIDs, packages each as
+`certinstall-<version>-<rid>.zip` (`.tar.gz` for macOS/Linux to keep the
+executable bit) and creates release `v<version>` with a `SHA256SUMS` file.
 macOS archives are built on a macOS runner: the SDK only ad-hoc signs the
 apphost when publishing on macOS, and unsigned arm64 binaries are killed.
 
@@ -241,7 +247,7 @@ SmartScreen "More info → Run anyway"; macOS `xattr -d com.apple.quarantine cer
   `docs/manual-test-checklist.md`: install → Chrome loads a `wss://` test page
   without warning → status → uninstall → warning is back. Both scopes.
 - CI (GitHub Actions, `windows-latest`, `macos-latest`, `ubuntu-latest`) runs
-  unit tests only, plus the release workflow.
+  unit tests only; pushes to `main` also build and release (see Packaging).
 
 ## Open questions
 

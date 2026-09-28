@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # YYYY.MM.BUILD (UTC). Computed once so every RID of a run shares it.
+      - id: version
+        run: echo "version=$(date -u +%Y.%m).${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: dotnet test
+
+  build:
+    needs: [version, test]
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rids: win-x64 linux-x64 linux-arm64
+          # The SDK only ad-hoc signs the apphost when publishing on macOS;
+          # unsigned arm64 binaries are killed at launch.
+          - os: macos-latest
+            rids: osx-arm64 osx-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: ./scripts/publish.sh "${{ needs.version.outputs.version }}" ${{ matrix.rids }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: cd dist && sha256sum * > SHA256SUMS
+      - run: >
+          gh release create "v${{ needs.version.outputs.version }}" dist/*
+          --repo "${{ github.repository }}" --target "${{ github.sha }}"
+          --title "certinstall ${{ needs.version.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
