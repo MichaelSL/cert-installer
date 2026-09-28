@@ -1,7 +1,7 @@
 # certinstall — design
 
 Date: 2026-09-28
-Status: draft, awaiting review
+Status: reviewed (grill session 2026-09-28), awaiting approval
 
 ## Purpose
 
@@ -14,17 +14,27 @@ removes and checks such a certificate in the right trust store, so
 Platform priority: Windows → macOS → Linux. On Linux, one browser
 (Chrome/Chromium) is enough for the first version.
 
+Target clients: Chrome/Edge (all OSes) and non-browser clients that read the
+OS store (curl, OpenSSL, Go). Safari is covered incidentally by the macOS
+keychain. Dev servers may present either a self-signed leaf or a leaf signed by
+a local dev CA (in which case the CA is installed); the tool handles both.
+
 ## Non-goals (v1)
 
 - Generating certificates or keys (the cert already exists; its path is an argument).
 - Fetching certificates from a running server.
 - Firefox profile NSS databases; Snap/Flatpak-sandboxed browsers.
 - Anything other than one certificate per invocation.
+- Managing runtime-specific trust (Node, Python): only guidance is printed.
+- `list` / uninstall-by-fingerprint: certs are addressed by file only.
+- Automatic elevation (sudo re-exec, UAC relaunch).
+- Machine-readable output (`--json`) and `--quiet`.
+- Code signing / notarization.
 
 ## CLI
 
 ```
-certinstall install   <cert-file> [--system]
+certinstall install   <cert-file> [--system] [--force]
 certinstall uninstall <cert-file> [--system]
 certinstall status    <cert-file> [--system]
 ```
@@ -36,6 +46,44 @@ certinstall status    <cert-file> [--system]
 - `install` is idempotent: if already trusted, print so and exit 0.
 - `uninstall` on a cert that is not installed prints so and exits 0.
 - `status` prints `trusted` / `not trusted`.
+- Output is human-readable text only: messages to stdout, warnings, errors and
+  hints to stderr. Scripts rely on exit codes.
+
+### Accepted certificates
+
+- Self-signed (issuer == subject, signature verifies with its own key): accepted.
+- CA certificate (basicConstraints CA=true): accepted.
+- Leaf issued by another CA: refused with exit 2 —
+  `this certificate is issued by <issuer>; install the issuing CA instead` —
+  unless `--force` is given, in which case it is installed as-is.
+
+### Privileges
+
+The tool never elevates itself. `--system` without root/Administrator fails
+with exit 3 and a hint (`re-run with sudo` / `re-run from an elevated
+terminal`). `--system` means the machine store only; it never also touches a
+user store.
+
+### Linux: interactive system-wide prompt
+
+On Linux, plain `install` (user scope) first installs into the NSS db, then —
+if stdin and stdout are a TTY — asks `Also trust system-wide for curl/Go/OpenSSL? [y/N]`.
+On `y`, if not root, it prints the exact command to run
+(`sudo certinstall install --system <file>`) and exits 0 (the NSS install
+succeeded). Without a TTY no prompt is shown; the tool behaves as user scope
+and prints the same command as a hint.
+
+### Post-install guidance
+
+After a successful `install`, print how to make common runtimes use the cert,
+since they ignore the OS store by default:
+
+- Node: `NODE_EXTRA_CA_CERTS=<absolute path to cert>` or `node --use-system-ca`.
+- Python requests: `REQUESTS_CA_BUNDLE=<path>` (replaces the bundle; point it at
+  a combined bundle if other HTTPS is needed).
+- Chrome on Linux: restart the browser.
+
+The tool does not set environment variables itself.
 
 Exit codes:
 
@@ -49,7 +97,7 @@ Exit codes:
 ### Pre-install checks (warnings, do not block)
 
 - Certificate is expired or not yet valid.
-- Certificate has no Subject Alternative Name — browsers ignore CN, so the cert
+- Leaf certificate (not a CA) has no Subject Alternative Name — browsers ignore CN, so the cert
   will still be rejected even when trusted. This is the #1 cause of "trusted but
   still red".
 
@@ -167,10 +215,16 @@ dotnet publish src/CertInstaller.Cli -c Release -r <rid> --self-contained \
   -p:PublishSingleFile=true -p:PublishTrimmed=true -o dist/<rid>
 ```
 
-RIDs: `win-x64`, `osx-arm64`, `osx-x64`, `linux-x64`. Assembly name `certinstall`.
-A `scripts/publish.sh` loops over the RIDs. NativeAOT is not used (no cross-OS
-compilation). macOS binaries are unsigned in v1; Gatekeeper quarantine can be
-cleared with `xattr -d com.apple.quarantine`.
+RIDs: `win-x64`, `osx-arm64`, `osx-x64`, `linux-x64`, `linux-arm64`.
+Assembly name `certinstall`. A `scripts/publish.sh` loops over the RIDs.
+NativeAOT is not used (no cross-OS compilation).
+
+Distribution: GitHub Releases. A workflow triggered by a `v*` tag publishes
+all RIDs, packages each as `certinstall-<version>-<rid>.zip` (`.tar.gz` for
+macOS/Linux to keep the executable bit) and attaches a `SHA256SUMS` file.
+
+Binaries are unsigned in v1. The README documents the workarounds: Windows
+SmartScreen "More info → Run anyway"; macOS `xattr -d com.apple.quarantine certinstall`.
 
 ## Testing
 
@@ -181,13 +235,13 @@ cleared with `xattr -d com.apple.quarantine`.
 - Integration tests (`[Trait("Category","Integration")]`, excluded by default,
   run with `dotnet test --filter Category=Integration`): generate a throwaway
   self-signed cert, install → status → uninstall → status against the real store.
-- CI: GitHub Actions matrix `windows-latest`, `macos-latest`, `ubuntu-latest`
-  running unit tests everywhere, integration tests on Windows (CurrentUser)
-  and Linux (NSS user + system via sudo), macOS system scope via sudo
-  (user scope needs a GUI prompt).
+- Integration tests are run manually on real machines (Windows PC, Mac,
+  Linux desktop) before each release, following a checklist in
+  `docs/manual-test-checklist.md`: install → Chrome loads a `wss://` test page
+  without warning → status → uninstall → warning is back. Both scopes.
+- CI (GitHub Actions, `windows-latest`, `macos-latest`, `ubuntu-latest`) runs
+  unit tests only, plus the release workflow.
 
 ## Open questions
 
-- Exact macOS `IsTrusted` command — confirm on a real Mac.
-- Whether the Windows CurrentUser Root confirmation dialog appears in CI
-  (GitHub runners are known to allow it non-interactively; verify).
+- Exact macOS `IsTrusted` command — confirm on a real Mac during manual testing.
